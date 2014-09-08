@@ -1,5 +1,3 @@
-
-
 var google = require('googleapis');
 var http = require('http');
 var fs = require('fs');
@@ -17,21 +15,7 @@ var SERVICE_ACCOUNT_EMAIL = '314338891317-u8v8evcg11jpfn8ukkdkbh25p53h84ua@devel
 var SERVICE_ACCOUNT_KEY_FILE = './server/googleapi-privatekey.pem'
 var scopes = ['https://www.googleapis.com/auth/bigquery','https://www.googleapis.com/auth/cloud-platform'];
 
-var repo_activity_by_month_query = 'SELECT repository_language, LEFT(created_at, 7) as month, COUNT(*) as activity FROM [githubarchive:github.timeline] GROUP BY repository_language, month ORDER BY month DESC;'
-var repo_activity_by_month_file = 'repo_activity_by_month.json'
-
-
-//create an oauth2 object for authentication. We just need to add an access_token property now
-
-var oauth2 = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, 'postmessage');
-
-//create a JWT object with our service account email and private key.
-var JWT = new google.auth.JWT(
-	SERVICE_ACCOUNT_EMAIL,
-	SERVICE_ACCOUNT_KEY_FILE,
-	null,
-	scopes);
-
+//Define all of our queries
 var repo_activity_by_month = {
 	query:'SELECT repository_language, LEFT(created_at, 7) as month, COUNT(*) as activity FROM [githubarchive:github.timeline] GROUP BY repository_language, month ORDER BY month DESC;',
 	file: 'repo_activity_by_month.json'
@@ -56,26 +40,23 @@ var all_languages_by_activity = {
 	query: "SELECT repository_language, COUNT(*) as activity FROM [githubarchive:github.timeline] where (type='PublicEvent' OR type='PushEvent' OR type='WatchEvent' OR type = 'PullRequestEvent' OR type = 'CreateEvent' or type ='IssuesEvent' or type ='ForkEvent') GROUP EACH BY repository_language HAVING repository_language IS NOT NULL AND repository_language != ''ORDER BY activity DESC;",
 	file: "all_languages_by_activity.json"
 }
+//Create an oauth2 object for authentication. This will be passed into all of our future
+//queries. We just need to add an access_token property first, before we can use it.
+var oauth2 = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, 'postmessage');
+
+//Create a JWT object with our service account email and private key. Eventually we will invoke
+//JWT.authorize in order to obtain an access_token for our oauth2.
+var JWT = new google.auth.JWT(
+	SERVICE_ACCOUNT_EMAIL,
+	SERVICE_ACCOUNT_KEY_FILE,
+	null,
+	scopes);
+
 //set our export model
 var updater = {};
 
-var queries = [repo_activity_by_month,repos_creates_by_month,repos_made_public_by_month,pushes_by_month, top_languages_by_activity_by_quarter, all_languages_by_activity];
-
-updater.masterUpdate = function() {
-	if (queries.length > 0) {
-		var query = queries.pop();
-		setTimeout(function(){
-			updater.makeFile(query.query,query.file,updater.masterUpdate);
-		},5000);
-	}
-	queries = [repo_activity_by_month,repos_creates_by_month,repos_made_public_by_month,pushes_by_month, top_languages_by_activity_by_quarter, all_languages_by_activity]; 
-};
-
-
-
-//thequery: 'SELECT * FROM [githubscout.distinct_users_pushing_by_month_and_language] LIMIT 3500;'
-//thefileName: 'usersPushingByMonthAndLanguage2.json'
-
+//This function takes a SQL query string, and a fileName as arguments (along with an optional callback)
+//and it queries githubArchives and then saves a file to our rootdirectory with the fileName. 
 updater.makeFile = function(myQuery,fileName,callback){
 
 	// Use JWT.authorize to retrieve an access_token, add the access token to our oauth2 object,
@@ -97,10 +78,9 @@ updater.makeFile = function(myQuery,fileName,callback){
 					}
 				},
 				media: {}
-				//our callback takes the jobID we created and saves the results of that query
-				//as a file
+				//our callback takes the jobID we created, uses the jobID to make a query, and then
+				//and saves the results of that query as a file in root directory
 			}, function(err,data){
-				console.log('data with jobID: ',data)
 				if(err)console.log(err);
 				var jobID = data['jobReference']['jobId'];
 				bigquery.jobs.getQueryResults({
@@ -113,7 +93,7 @@ updater.makeFile = function(myQuery,fileName,callback){
 						JSON.stringify(data),
 						function(err){
 							if(err)console.log(err);
-							console.log('Saved!!!!!!!!!!')
+							console.log('File Saved!!!!!!!!!!')
 							callback();
 						})
 				});
@@ -121,7 +101,21 @@ updater.makeFile = function(myQuery,fileName,callback){
 		})		
 }
 
-// updater.makeFile(repo_activity_by_month_query,repo_activity_by_month_file);
+
+//Storage array for all of our queries. 
+var queries = [repo_activity_by_month,repos_creates_by_month,repos_made_public_by_month,pushes_by_month, top_languages_by_activity_by_quarter, all_languages_by_activity];
+
+//Recursive function that allows us to synchronously invoke our updater.makeFile function once
+//for every query in queries. This gets called by a setInterval in server.js, on a 20hr interval.
+updater.masterUpdate = function() {
+	if (queries.length > 0) {
+		var query = queries.pop();
+		setTimeout(function(){
+			updater.makeFile(query.query,query.file,updater.masterUpdate);
+		},5000);
+	}
+	queries = [repo_activity_by_month,repos_creates_by_month,repos_made_public_by_month,pushes_by_month, top_languages_by_activity_by_quarter, all_languages_by_activity]; 
+};
 
 
 
