@@ -5,11 +5,11 @@ var updater = require('./server/autoUpdates.js');
 
 
 //update files every 20 hrs
-setInterval(function(){
-	console.log('running...')
-	updater.masterUpdate();
-},72000000);
-
+// setInterval(function(){
+// 	console.log('running...')
+// 	updater.masterUpdate();
+// },72000000);
+updater.masterUpdate();
 
 
 var app = express();
